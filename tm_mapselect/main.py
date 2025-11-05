@@ -26,6 +26,7 @@ class Map:
 
 @dataclass
 class ServerState:
+    server_name: str
     maps: list[Map]
     players: list[str]
     current_map_index: int
@@ -56,6 +57,14 @@ class ServerController:
 
         return f"#join={self.remote.host}:2350@Trackmania"
 
+    def get_server_name(self) -> str:
+        if not self.remote.connalive:
+            raise RuntimeError("Not connected to the dedicated server.")
+        name = self.remote.call("GetServerName")
+        if not isinstance(name, str):
+            raise RuntimeError("Failed to retrieve server name.")
+        return name
+
     def connect(self) -> bool:
         print("Connecting to the dedicated server...")
         connected = self.remote.connect()
@@ -64,7 +73,9 @@ class ServerController:
             maps = self.get_map_list()
             current_map_index = self.get_current_map_index()
             mode_script_settings = self.get_mode_script_settings()
+            server_name = self.get_server_name()
             self.state = ServerState(
+                server_name=server_name,
                 maps=maps,
                 players=[],
                 current_map_index=current_map_index,
@@ -175,13 +186,14 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
         timelimit = controller.state.modescript_settings.get("S_TimeLimit", 0)
 
         current_map = controller.state.current_map_index if controller.state else None
+        server_name = controller.state.server_name if controller.state else "Unknown"
 
         return render_template(
             "index.html",
             maps=maps,
             current_map=current_map,
             timelimit=timelimit,
-            server_name="k-fortytwo",
+            server_name=server_name,
         )
 
     @app.route("/jumpToMap/<int:map_index>")
@@ -274,10 +286,11 @@ def main():
     arg_parser.add_argument(
         "--port", "-P", type=int, default=port, help="Bind port for the web server"
     )
+
     args = arg_parser.parse_args()
 
     app = create_app(args.server, args.xml_port, args.username, args.password)
-    app.run(host=args.host, port=args.port)
+    app.run(host=args.host, port=args.port, debug=True)
 
 
 if __name__ == "__main__":
