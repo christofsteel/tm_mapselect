@@ -6,27 +6,38 @@
 
 body {
   background-image: linear-gradient(to bottom right, #1da153, #48a9ca);
+  background-attachment: fixed;
   height: 100vh;
 }
 #maps {
-
   transform: skew(-5deg);
 }    
+
+#maps ul {
+  display: flex;
+  height: 90vh;
+  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0px;
+}
 #maps li {
-  display: inline-block;
+  display: block;
+  /* flex: 1 0 20%; */
   background-color: #03ae03;
-  width: 400px;
-  height: 200px;
+  height: 15%;
   border: 5px solid white;
   margin: 10px;
   border-radius: 15px 0px 15px 0px;
   background-size: cover;
   background-position: center;
+  background-scroll: none;
+  transition: transform .2s;
 }    
 
 #maps li:hover {
   box-shadow: 0 0 15px 5px rgba(255, 255, 255, 0.7);
   cursor: pointer;
+  transform: scale(1.1);
 }
 
 #maps .mapstext {
