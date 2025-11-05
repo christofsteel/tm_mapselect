@@ -185,13 +185,13 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
         maps = controller.state.maps
         timelimit = controller.state.modescript_settings.get("S_TimeLimit", 0)
 
-        current_map = controller.state.current_map_index if controller.state else None
-        server_name = controller.state.server_name if controller.state else "Unknown"
+        current_map = controller.state.current_map_index
+        server_name = controller.state.server_name
 
         return render_template(
             "index.html",
             maps=maps,
-            current_map=current_map,
+            current_map_index=current_map,
             timelimit=timelimit,
             server_name=server_name,
         )
