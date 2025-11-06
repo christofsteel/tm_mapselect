@@ -214,7 +214,7 @@ h2 {
           <label for='current_players'>Current Players</label><input type='number' id='current_players' name='current_players' value="{{ state.players|length }}" disabled>
         </div>
         <div>
-          <label for='timelimit'>Time Limit</label><input type='number' id='time_limit' name='time_limit' value="{{ state.modescript_settings.time_limit }}" required>
+          <label for='time_limit'>Time Limit</label><input type='number' id='time_limit' name='time_limit' value="{{ state.modescript_settings.time_limit }}" required>
           <label for='max_players'>Maximum Players</label><input type='number' id='max_players' name='max_players' value="{{ state.max_players }}" required>
         </div>
         <input type='submit' value='Apply' onclick='applySettings()'>
