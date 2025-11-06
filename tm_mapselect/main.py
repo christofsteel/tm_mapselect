@@ -1,10 +1,13 @@
-from typing import Optional
+from threading import Thread
+from typing import Any, Callable, Concatenate, Optional, cast
 from xmlrpc.client import Fault
 from dataclasses import dataclass
 from flask import Flask, request, render_template
 from requests import get
 from argparse import ArgumentParser
 import os
+import time
+import sqlite3
 
 from .gbxremote import DedicatedRemote
 
@@ -25,12 +28,32 @@ class Map:
 
 
 @dataclass
+class ModeScriptSettings:
+    time_limit: int
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "S_TimeLimit": self.time_limit,
+        }
+
+    def update_from_dict(self, settings: dict[str, str | bool | int]) -> None:
+        if "S_TimeLimit" in settings:
+            self.time_limit = check_cast(settings["S_TimeLimit"], int)
+
+    @classmethod
+    def from_dict(cls, settings: dict[str, str | bool | int]) -> "ModeScriptSettings":
+        time_limit = check_cast(settings.get("S_TimeLimit", 0), int)
+        return cls(time_limit=time_limit)
+
+
+@dataclass
 class ServerState:
     server_name: str
     maps: list[Map]
     players: list[str]
     current_map_index: int
-    modescript_settings: dict[str, int | str | bool]
+    modescript_settings: ModeScriptSettings
+    max_players: int
 
     @property
     def current_map(self) -> Map | None:
@@ -39,8 +62,34 @@ class ServerState:
         return None
 
 
+def validate_connection[T, **P](
+    inner: Callable[Concatenate[Any, P], T],
+) -> Callable[Concatenate[Any, P], T]:
+    def wrapper(self, *args: P.args, **kwargs: P.kwargs) -> T:
+        if not self.remote.connalive:
+            raise RuntimeError("Not connected to the dedicated server.")
+        result = inner(self, *args, **kwargs)
+        return result
+
+    return wrapper
+
+
+def check_cast[T](obj: Any, typ: type[T]) -> T:
+    if not isinstance(obj, typ):
+        raise TypeError(f"Expected type {typ}, got {type(obj)}")
+    return cast(T, obj)
+
+
 class ServerController:
-    def __init__(self, host: str, port: int, username: str, password: str):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        password: str,
+        /,
+        sqlite_cache_path: str = "cache.sql",
+    ) -> None:
         self.remote = DedicatedRemote(
             host,
             port,
@@ -49,21 +98,62 @@ class ServerController:
             apiVersion="2022-03-21",
         )
         self.state: Optional[ServerState] = None
-        self._uid_to_id_cache: dict[str, int] = {}
+        self._sqlite_cache_conn = sqlite3.connect(sqlite_cache_path)
+        self._initialize_cache_db()
+        self._uid_to_id_cache: dict[str, int] = self._load_uid_to_id_cache()
+        self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
 
-    def get_connection_string(self) -> str:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
+    def _periodic_update(self) -> None:
+        while True:
+            try:
+                self.update_state()
+            except Exception as e:
+                print(f"Error during periodic update: {e}")
+            time.sleep(60)
 
-        return f"#join={self.remote.host}:2350@Trackmania"
+    def _load_uid_to_id_cache(self) -> dict[str, int]:
+        cursor = self._sqlite_cache_conn.cursor()
+        cursor.execute("SELECT uid, id FROM map_uid_to_id")
+        rows = cursor.fetchall()
+        return {uid: id for uid, id in rows}
 
+    def _initialize_cache_db(self) -> None:
+        cursor = self._sqlite_cache_conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS map_uid_to_id (
+                uid TEXT PRIMARY KEY,
+                id INTEGER NOT NULL
+            )
+            """
+        )
+        self._sqlite_cache_conn.commit()
+
+    @validate_connection
     def get_server_name(self) -> str:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
-        name = self.remote.call("GetServerName")
-        if not isinstance(name, str):
-            raise RuntimeError("Failed to retrieve server name.")
-        return name
+        return check_cast(self.remote.call("GetServerName"), str)
+
+    @validate_connection
+    def get_max_players(self) -> int:
+        result = check_cast(self.remote.call("GetMaxPlayers"), dict)
+        if "CurrentValue" not in result:
+            raise RuntimeError("Failed to get max players.")
+        return check_cast(result["CurrentValue"], int)
+
+    @validate_connection
+    def set_max_players(self, max_players: int) -> None:
+        try:
+            self.remote.call("SetMaxPlayers", max_players)
+        except Fault as e:
+            raise RuntimeError(f"Failed to set max players: {e}") from e
+
+    @validate_connection
+    def get_player_list(self) -> list[str]:
+        players = self.remote.call("GetPlayerList", 100, 0)
+        if not isinstance(players, list) or len(players) == 0:
+            raise RuntimeError("Failed to get player list.")
+        players = players[1:]
+        return [check_cast(player["NickName"], str) for player in players]
 
     def connect(self) -> bool:
         print("Connecting to the dedicated server...")
@@ -72,31 +162,34 @@ class ServerController:
             print("Collecting map infos...")
             maps = self.get_map_list()
             current_map_index = self.get_current_map_index()
-            mode_script_settings = self.get_mode_script_settings()
+            mode_script_settings = ModeScriptSettings.from_dict(
+                self.get_mode_script_settings()
+            )
             server_name = self.get_server_name()
+            max_players = self.get_max_players()
+            player_list = self.get_player_list()
             self.state = ServerState(
                 server_name=server_name,
                 maps=maps,
-                players=[],
+                players=player_list,
                 current_map_index=current_map_index,
                 modescript_settings=mode_script_settings,
+                max_players=max_players,
             )
+            self.update_thread.start()
         return connected
 
-    def get_mode_script_settings(self) -> dict:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
-        options = self.remote.call("GetModeScriptSettings")
-        if not isinstance(options, dict):
-            raise RuntimeError("Failed to retrieve mode script settings.")
-        return options
+    @validate_connection
+    def get_mode_script_settings(self) -> dict[str, bool | int | str]:
+        return check_cast(self.remote.call("GetModeScriptSettings"), dict)
 
-    def set_mode_script_setting(self, key: str, value: bool | int | str) -> bool:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
+    @validate_connection
+    def set_mode_script_settings(
+        self, settings_dict: dict[str, bool | int | str]
+    ) -> bool:
         try:
             current_mode_settings = self.get_mode_script_settings()
-            current_mode_settings[key] = value
+            current_mode_settings |= settings_dict
             result = self.remote.call("SetModeScriptSettings", current_mode_settings)
             if not isinstance(result, bool):
                 raise RuntimeError("Failed to set mode script settings.")
@@ -107,13 +200,9 @@ class ServerController:
     def disconnect(self) -> None:
         self.remote.stop()
 
+    @validate_connection
     def get_current_map_index(self) -> int:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
-        idx = self.remote.call("GetCurrentMapIndex")
-        if not isinstance(idx, int):
-            raise RuntimeError("Failed to retrieve current map index.")
-        return idx
+        return check_cast(self.remote.call("GetCurrentMapIndex"), int)
 
     def get_tmx_id(self, map_uid: str) -> int:
         if map_uid in self._uid_to_id_cache:
@@ -125,11 +214,16 @@ class ServerController:
             raise RuntimeError(f"Failed to retrieve TMX info for map UID {map_uid}.")
         id = response.json()["Results"][0]["MapId"]
         self._uid_to_id_cache[map_uid] = id
+        cursor = self._sqlite_cache_conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO map_uid_to_id (uid, id) VALUES (?, ?)",
+            (map_uid, id),
+        )
+        self._sqlite_cache_conn.commit()
         return id
 
+    @validate_connection
     def get_map_list(self, map_chunks: int = 5) -> list[Map]:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
         offset = 0
         maps = []
         new_maps = self.remote.call("GetMapList", map_chunks, offset)
@@ -147,10 +241,10 @@ class ServerController:
         maps = [map_data | tmx_info for map_data, tmx_info in zip(maps, tmx_infos)]
         return [Map(**map_data) for map_data in maps]
 
+    @validate_connection
     def set_current_map_index(self, index: int) -> None:
-        if not self.remote.connalive:
-            raise RuntimeError("Not connected to the dedicated server.")
         try:
+            print(f"Jumping to map index {index}...")
             self.remote.call("JumpToMapIndex", index)
         except Fault as e:
             raise RuntimeError(f"Failed to set current map index: {e}") from e
@@ -165,12 +259,18 @@ class ServerController:
 
     def update_mode_script_settings(self) -> None:
         if self.state:
-            self.state.modescript_settings = self.get_mode_script_settings()
+            settings = self.get_mode_script_settings()
+            self.state.modescript_settings.update_from_dict(settings)
+
+    def update_player_list(self) -> None:
+        if self.state:
+            self.state.players = self.get_player_list()
 
     def update_state(self) -> None:
         self.update_map_list()
         self.update_current_map_index()
         self.update_mode_script_settings()
+        self.update_player_list()
 
 
 def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
@@ -182,18 +282,10 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
     def index():
         if not controller.state:
             return "<h1>Error: Not connected to the server.</h1>"
-        maps = controller.state.maps
-        timelimit = controller.state.modescript_settings.get("S_TimeLimit", 0)
-
-        current_map = controller.state.current_map_index
-        server_name = controller.state.server_name
 
         return render_template(
             "index.html",
-            maps=maps,
-            current_map_index=current_map,
-            timelimit=timelimit,
-            server_name=server_name,
+            state=controller.state,
         )
 
     @app.route("/jumpToMap/<int:map_index>")
@@ -205,17 +297,19 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
         except RuntimeError as e:
             return f"Error: {e}. <a href='/'>Go back</a>"
 
-    @app.route("/setTimeLimit", methods=["POST"])
-    def set_time_limit():
+    @app.route("/settings", methods=["POST"])
+    def update_settings():
         try:
-            timelimit = int(request.form["timelimit"])
-            result = controller.set_mode_script_setting("S_TimeLimit", timelimit)
+            timelimit = int(request.form["time_limit"])
+            max_players = int(request.form["max_players"])
+            result = controller.set_mode_script_settings({"S_TimeLimit": timelimit})
             if not result:
                 raise RuntimeError("Failed to set time limit.")
+            controller.set_max_players(max_players)
             controller.update_state()
-            return f"Time limit set to {timelimit} seconds. <a href='/'>Go back</a>"
+            return "OK"
         except (ValueError, RuntimeError) as e:
-            return f"Error: {e}. <a href='/'>Go back</a>"
+            return f"Error: {e}"
 
     @app.route("/refresh")
     def refresh():
@@ -228,7 +322,7 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
             return "<h1>Error: Not connected to the server.</h1>"
         settings = controller.state.modescript_settings
         settings_list = "".join(
-            [f"<li>{key}: {value}</li>" for key, value in settings.items()]
+            [f"<li>{key}: {value}</li>" for key, value in settings.as_dict().items()]
         )
 
         return f"<h1>Mode Script Settings</h1><ul>{settings_list}</ul><a href='/'>Go back</a>"

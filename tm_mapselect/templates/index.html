@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Trackmania Map Selector - {{ server_name }}</title>
+    <title>Trackmania Map Selector - {{ state.server_name }}</title>
     <style>
 
 body {
@@ -38,11 +38,16 @@ body {
 }    
 
 #maps .current-map {
-  box-shadow: 0 0 30px 20px rgba(30, 170, 128, 1);
+  /* border-color: #33754a; */
+  box-shadow: 0 0 30px 15px rgba(255, 255, 255, 0.7);
+}
+
+#maps .current-map:hover {
+  box-shadow: 0 0 30px 15px rgba(110, 250, 160, 0.7);
 }
 
 #maps li:hover {
-  box-shadow: 0 0 15px 5px rgba(255, 255, 255, 0.7);
+  border-color: #6efaa0;
   cursor: pointer;
   transform: scale(1.1);
 }
@@ -89,15 +94,14 @@ h2 {
 
 .options{
   transform: skew(-5deg);
-  width: 50%;
+  max-width: 100em;
   margin: 20px auto;
 }
 
 .options label{
   display: inline-block;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 5, 20, 0.6);
   color: #a0a7a8;
-  margin: 10px 0px 10px 0px;
   padding: 10px 20px;
   width: 60%;
   font-size: 20px;
@@ -108,9 +112,12 @@ h2 {
   box-sizing: border-box;
 }
 
+.options input {
+  margin: 5px 0px 0px 0px;
+}
 .options label:hover{
-  background-color: rgba(0, 0, 0, 0.9);
-  cursor: pointer;
+  background-color: rgba(0, 5, 20, 1);
+  color: #6efaa0;
 }
 
 .options input[type="number"]:hover, .options input[type="number"]:focus {
@@ -143,6 +150,14 @@ h2 {
     width: 100%;
   text-transform: uppercase;
   border-radius: 15px 0px 15px 0px;
+  box-sizing: border-box;
+}
+.options input[type="submit"]:hover {
+  background-color: rgba(0, 0, 0, 1);
+  color: #6efaa0;
+  border:4px solid #6efaa0;
+  padding: 6px 16px;
+  box-sizing: border-box;
 }
     </style>
 
@@ -160,22 +175,31 @@ h2 {
       console.error('Error:', error);
     });
   }
+
+  function applySettings() {
+    const formElement = document.getElementById('settingsForm');
+    const data = new FormData(formElement);
+    fetch('/settings', {
+      method: 'POST',
+      body: data 
+    })
+  }
     </script>
   </head>
   <body>
-    <h1>Trackmania Map Selector - {{ server_name }}</h1>
+    <h1>Trackmania Map Selector - {{ state.server_name }}</h1>
     <div id='maps'>
       <ul>
-        {% for map in maps %}
+        {% for map in state.maps %}
           <li
-          {% if loop.index == current_map_index %}
+          {% if (loop.index - 1) == state.current_map_index %}
             class="current-map"
           {% endif %}
  style="background-image: url('https://trackmania.exchange/mapthumb/{{ map.ID }}');"
         >
           <div class="mapstext" id="{{ map.ID}}" 
            >
-            <a href="#" onclick='jumpToMap({{ loop.index }})'><span class="mapname">{{ map.Name }}</span>
+            <a href="#" onclick='jumpToMap({{ loop.index - 1 }})'><span class="mapname">{{ map.Name }}</span>
               <span class="mapauthor">by {{ map.Author }}</span>              
             </a>            
           </div>
@@ -183,13 +207,17 @@ h2 {
         {% endfor %}
       </ul>
     </div>
-    <h2>Options</h2>
+    <h2>Options and Stats</h2>
     <div class='options'>
-      <form method='post' action='/setTimeLimit'>
+      <form id='settingsForm' method="post" action="#" onsubmit="applySettings();return false">
         <div>
-        <label for='timelimit'>Time Limit (seconds):</label><input type='number' id='timelimit' name='timelimit' value="{{ timelimit }}" required>
+          <label for='current_players'>Current Players</label><input type='number' id='current_players' name='current_players' value="{{ state.players|length }}" disabled>
         </div>
-        <input type='submit' value='Apply'>
+        <div>
+          <label for='timelimit'>Time Limit</label><input type='number' id='time_limit' name='time_limit' value="{{ state.modescript_settings.time_limit }}" required>
+          <label for='max_players'>Maximum Players</label><input type='number' id='max_players' name='max_players' value="{{ state.max_players }}" required>
+        </div>
+        <input type='submit' value='Apply' onclick='applySettings()'>
       </form>
     </div>
   </body>
