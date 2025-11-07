@@ -100,8 +100,7 @@ class ServerController:
             apiVersion="2022-03-21",
         )
         self.state: Optional[ServerState] = None
-        self._sqlite_cache_conn = sqlite3.connect(sqlite_cache_path)
-        self._initialize_cache_db()
+        self._sqlite_cache_path = sqlite_cache_path
         self._uid_to_id_cache: dict[str, int] = self._load_uid_to_id_cache()
         self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
 
@@ -114,13 +113,16 @@ class ServerController:
             time.sleep(60)
 
     def _load_uid_to_id_cache(self) -> dict[str, int]:
-        cursor = self._sqlite_cache_conn.cursor()
+        connection = sqlite3.connect(self._sqlite_cache_path)
+        cursor = connection.cursor()
         cursor.execute("SELECT uid, id FROM map_uid_to_id")
         rows = cursor.fetchall()
+        connection.close()
         return {uid: id for uid, id in rows}
 
     def _initialize_cache_db(self) -> None:
-        cursor = self._sqlite_cache_conn.cursor()
+        connection = sqlite3.connect(self._sqlite_cache_path)
+        cursor = connection.cursor()
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS map_uid_to_id (
@@ -129,7 +131,8 @@ class ServerController:
             )
             """
         )
-        self._sqlite_cache_conn.commit()
+        connection.commit()
+        connection.close()
 
     @validate_connection
     def get_server_name(self) -> str:
@@ -216,12 +219,14 @@ class ServerController:
             raise RuntimeError(f"Failed to retrieve TMX info for map UID {map_uid}.")
         id = response.json()["Results"][0]["MapId"]
         self._uid_to_id_cache[map_uid] = id
-        cursor = self._sqlite_cache_conn.cursor()
+        connection = sqlite3.connect(self._sqlite_cache_path)
+        cursor = connection.cursor()
         cursor.execute(
             "INSERT OR REPLACE INTO map_uid_to_id (uid, id) VALUES (?, ?)",
             (map_uid, id),
         )
-        self._sqlite_cache_conn.commit()
+        connection.commit()
+        connection.close()
         return id
 
     @validate_connection
