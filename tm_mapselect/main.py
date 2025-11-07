@@ -9,6 +9,8 @@ import os
 import time
 import sqlite3
 
+from tm_mapselect.tmcolors import word_to_html
+
 from .gbxremote import DedicatedRemote
 
 
@@ -277,6 +279,10 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
     app = Flask(__name__)
     controller = ServerController(tm_server, tm_xml_port, tm_user, tm_password)
     controller.connect()
+
+    @app.template_filter()
+    def format_tm(word: str) -> str:
+        return word_to_html(word)
 
     @app.route("/")
     def index():

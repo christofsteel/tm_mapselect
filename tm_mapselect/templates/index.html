@@ -199,7 +199,7 @@ h2 {
         >
           <div class="mapstext" id="{{ map.ID}}" 
            >
-            <a href="#" onclick='jumpToMap({{ loop.index - 1 }})'><span class="mapname">{{ map.Name }}</span>
+            <a href="#" onclick='jumpToMap({{ loop.index - 1 }})'><span class="mapname">{{ map.Name | format_tm | safe }}</span>
               <span class="mapauthor">by {{ map.Author }}</span>              
             </a>            
           </div>
