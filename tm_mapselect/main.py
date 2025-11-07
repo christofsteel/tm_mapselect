@@ -101,6 +101,7 @@ class ServerController:
         )
         self.state: Optional[ServerState] = None
         self._sqlite_cache_path = sqlite_cache_path
+        self._initialize_cache_db()
         self._uid_to_id_cache: dict[str, int] = self._load_uid_to_id_cache()
         self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
 
