@@ -1,4 +1,4 @@
-from threading import Thread
+from threading import Thread, Event
 from typing import Any, Callable, Concatenate, Optional, cast
 from xmlrpc.client import Fault
 from dataclasses import dataclass
@@ -6,7 +6,6 @@ from flask import Flask, request, render_template
 from requests import get
 from argparse import ArgumentParser
 import os
-import time
 import sqlite3
 
 from tm_mapselect.tmcolors import word_to_html
@@ -100,18 +99,22 @@ class ServerController:
             apiVersion="2022-03-21",
         )
         self.state: Optional[ServerState] = None
-        self._sqlite_cache_conn = sqlite3.connect(sqlite_cache_path)
-        self._initialize_cache_db()
-        self._uid_to_id_cache: dict[str, int] = self._load_uid_to_id_cache()
+        self._uid_to_id_cache: dict[str, int] = {}
         self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
+        self.update_event: Event = Event()
+        self.sqlite_cache_path = sqlite_cache_path
 
     def _periodic_update(self) -> None:
+        self._sqlite_cache_conn = sqlite3.connect(self.sqlite_cache_path)
+        self._initialize_cache_db()
+        self._uid_to_id_cache: dict[str, int] = self._load_uid_to_id_cache()
         while True:
             try:
                 self.update_state()
             except Exception as e:
                 print(f"Error during periodic update: {e}")
-            time.sleep(60)
+            self.update_event.wait(timeout=60)
+            self.update_event.clear()  # Race condition, but I don't care
 
     def _load_uid_to_id_cache(self) -> dict[str, int]:
         cursor = self._sqlite_cache_conn.cursor()
@@ -161,8 +164,7 @@ class ServerController:
         print("Connecting to the dedicated server...")
         connected = self.remote.connect()
         if connected:
-            print("Collecting map infos...")
-            maps = self.get_map_list()
+            maps = []
             current_map_index = self.get_current_map_index()
             mode_script_settings = ModeScriptSettings.from_dict(
                 self.get_mode_script_settings()
@@ -298,7 +300,7 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
     def jump_to_map(map_index: int):
         try:
             controller.set_current_map_index(map_index)
-            controller.update_state()
+            controller.update_event.set()
             return f"Jumped to map index {map_index}. <a href='/'>Go back</a>"
         except RuntimeError as e:
             return f"Error: {e}. <a href='/'>Go back</a>"
@@ -312,14 +314,14 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
             if not result:
                 raise RuntimeError("Failed to set time limit.")
             controller.set_max_players(max_players)
-            controller.update_state()
+            controller.update_event.set()
             return "OK"
         except (ValueError, RuntimeError) as e:
             return f"Error: {e}"
 
     @app.route("/refresh")
     def refresh():
-        controller.update_state()
+        controller.update_event.set()
         return "Server state refreshed. <a href='/'>Go back</a>"
 
     @app.route("/getsettings")
