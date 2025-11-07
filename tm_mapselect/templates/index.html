@@ -112,21 +112,25 @@ h2 {
   box-sizing: border-box;
 }
 
-.options input {
+.options .tm_stat {
+  display: inline-block;
+}
+
+.options input, .options .tm_stat{
   margin: 5px 0px 0px 0px;
 }
-.options label:hover{
+.options label:hover {
   background-color: rgba(0, 5, 20, 1);
   color: #6efaa0;
 }
 
-.options input[type="number"]:hover, .options input[type="number"]:focus {
+.options input:hover, .options input:focus, .options .tm_stat:hover, .options .connected_elements label:hover + .tm_stat {
   background-color: #009b5f;
   color: #ffffff;
   cursor: text;
 }
 
-.options input[type="number"] {
+.options input, .options .tm_stat {
   background-color: #047f4f;
   color: #9acdb7;
   font-size: 20px;
@@ -210,9 +214,14 @@ h2 {
     <h2>Options and Stats</h2>
     <div class='options'>
       <form id='settingsForm' method="post" action="#" onsubmit="applySettings();return false">
-        <div>
-          <label for='current_players'>Current Players</label><input type='number' id='current_players' name='current_players' value="{{ state.players|length }}" disabled>
+        <div class="connected_elements">
+          <label for='current_players'>Current Players</label><span class="tm_stat">{{state.players|length}}</span>
         </div>
+        <div class="connected_elements">
+          <label>Current Map</label><span class="tm_stat">{{ state.current_map.Name | format_tm | safe }}</span>
+        </div>
+        <div class="connected_elements">
+          <label>Number of Maps loaded</label><span class="tm_stat">{{ state.maps|length }}</span>
         <div>
           <label for='time_limit'>Time Limit</label><input type='number' id='time_limit' name='time_limit' value="{{ state.modescript_settings.time_limit }}" required>
           <label for='max_players'>Maximum Players</label><input type='number' id='max_players' name='max_players' value="{{ state.max_players }}" required>
