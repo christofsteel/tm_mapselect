@@ -28,7 +28,7 @@ body {
   background-color: #03ae03;
   height: 15%;
   width: 20%;
-  border: 5px solid white;
+  /* border: 5px solid white; */
   margin: 10px;
   border-radius: 15px 0px 15px 0px;
   background-size: cover;
@@ -46,18 +46,29 @@ body {
 }    
 
 #maps .current-map {
-  /* border-color: #33754a; */
-  box-shadow: 0 0 30px 15px rgba(255, 255, 255, 0.7);
+  border: 5px solid #6efaa0;
+  /* box-shadow: 0 0 30px 15px rgba(255, 255, 255, 0.7); */
 }
 
 #maps .current-map:hover {
-  box-shadow: 0 0 30px 15px rgba(110, 250, 160, 0.7);
+  /* box-shadow: 0 0 30px 15px rgba(110, 250, 160, 0.7); */
 }
 
 #maps li:hover {
-  border-color: #6efaa0;
   cursor: pointer;
   transform: scale(1.1);
+  border: 5px solid white;
+  z-index: 100;
+}
+
+.tilted {
+  transform: skew(-5deg);
+  padding-bottom: 10px;
+  padding-left: 2px;
+}
+
+.tilted a, .tilted span{
+  transform: skew(5deg);
 }
 
 #maps .mapstext {
@@ -71,8 +82,8 @@ body {
 
 #maps .usertime {
   position: absolute;
-  bottom: 15px;
-  right: 25px;
+  bottom: 5px;
+  right: 10px;
   background-color: rgba(0, 0, 0, 0.6);
   padding: 5px 10px;
   border-radius: 10px;
@@ -182,6 +193,25 @@ h2 {
   padding: 6px 16px;
   box-sizing: border-box;
 }
+
+.medal {
+  text-shadow: 2px 2px 4px #000000;
+}
+.medal-Author {
+  color: #00FF00;
+}
+.medal-Gold {
+  color: #FFD700;
+}
+.medal-Silver {
+  color: #C0C0C0;
+}
+.medal-Bronze {
+  color: #cd7f32;
+}
+.medal-None {
+  display: none;
+}
     </style>
 
   <script>
@@ -211,11 +241,12 @@ h2 {
   </head>
   <body>
     <h1>Trackmania Map Selector - {{ state.server_name }}</h1>
-    {% if user_name %}
+    <div class="tilted">{% if user_name %}
       <a class="button_left" href="/logout">Logout</a><span class="button_right">Logged in as {{ user_name }}</span>
     {% else %}
       <a class="button" href="{{ authorization_url }}">Login with Trackmania</a>
     {% endif %}
+    </div>
     <div id='maps'>
       <ul>
         {% for map in state.maps %}
@@ -231,7 +262,7 @@ h2 {
               <span class="mapauthor">by {{ map.Author }}</span>              
           </div>
           {% if map.OnlineID in records %}
-            <div class="usertime">{{ records[map.OnlineID] | format_time }}</div>
+          <div class="usertime"><span class="medal medal-{{ records[map.OnlineID].medal }}">&#9679;</span> {{ records[map.OnlineID].record | format_time }}</div>          
           {% endif %}
           </li>
         {% endfor %}

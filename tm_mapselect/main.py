@@ -1,6 +1,6 @@
 from threading import Thread, Event
 from requests_oauthlib import OAuth2Session
-from typing import Any, Callable, Concatenate, Optional, cast
+from typing import Any, Callable, Concatenate, Literal, Optional, Self, cast
 from xmlrpc.client import Fault
 from dataclasses import dataclass
 from flask import Flask, request, render_template, session, redirect
@@ -12,6 +12,31 @@ import sqlite3
 from tm_mapselect.tmcolors import word_to_html
 
 from .gbxremote import DedicatedRemote
+
+
+@dataclass
+class MapUserData:
+    record: int
+    medal: (
+        Literal["Author"]
+        | Literal["Gold"]
+        | Literal["Silver"]
+        | Literal["Bronze"]
+        | None
+    )
+
+    @classmethod
+    def from_record(cls, record: int, medals: dict[str, int]) -> Self:
+        data = cls(record, None)
+        if record < medals["Bronze"]:
+            data.medal = "Bronze"
+        if record < medals["Silver"]:
+            data.medal = "Silver"
+        if record < medals["Gold"]:
+            data.medal = "Gold"
+        if record < medals["Author"]:
+            data.medal = "Author"
+        return data
 
 
 @dataclass
@@ -28,6 +53,7 @@ class Map:
     CopperPrice: int
     MapType: str
     MapStyle: str
+    Medals: dict[str, int]
 
 
 @dataclass
@@ -88,6 +114,10 @@ class DBEntry:
     uid: str
     id: int
     online_id: str
+    author_medal: int
+    gold_medal: int
+    silver_medal: int
+    bronze_medal: int
 
     @classmethod
     def create_table_sql(cls, cursor) -> None:
@@ -105,16 +135,20 @@ class DBEntry:
         cursor.execute(f"CREATE TABLE IF NOT EXISTS map_uid_to_id ({rows})")
 
     def insert_or_replace(self, cursor) -> None:
+        self_tuple = tuple(value for value in self.__dict__.values())
+        entry_strings = ", ".join("?" for _ in self_tuple)
+        field_names = ", ".join(self.__dict__.keys())
+
         return cursor.execute(
-            "INSERT OR REPLACE INTO map_uid_to_id (uid, id, online_id) VALUES (?, ?, ?)",
-            (self.uid, self.id, self.online_id),
+            f"INSERT OR REPLACE INTO map_uid_to_id ({field_names}) VALUES ({entry_strings})",
+            self_tuple,
         )
 
     @classmethod
     def select_all(cls, cursor) -> list["DBEntry"]:
-        cursor.execute("SELECT uid, id, online_id FROM map_uid_to_id")
+        cursor.execute("SELECT * FROM map_uid_to_id")
         rows = cursor.fetchall()
-        return [cls(uid=row[0], id=row[1], online_id=row[2]) for row in rows]
+        return [cls(*row) for row in rows]
 
 
 class DB:
@@ -132,10 +166,22 @@ class DB:
         entry.insert_or_replace(cursor)
         self.conn.commit()
 
-    def get_all_entries(self) -> dict[str, tuple[int, str]]:
+    def get_all_entries(self) -> dict[str, tuple[int, str, dict[str, int]]]:
         cursor = self.conn.cursor()
         entry = DBEntry.select_all(cursor)
-        return {e.uid: (e.id, e.online_id) for e in entry}
+        return {
+            e.uid: (
+                e.id,
+                e.online_id,
+                {
+                    "Author": e.author_medal,
+                    "Gold": e.gold_medal,
+                    "Silver": e.silver_medal,
+                    "Bronze": e.bronze_medal,
+                },
+            )
+            for e in entry
+        }
 
 
 class NadeoAPI:
@@ -182,22 +228,29 @@ class NadeoAPI:
         response.raise_for_status()
         return response.json()
 
-    def get_records(self, token: dict[str, Any], map_uids: list[str]) -> dict[str, int]:
+    def get_records(
+        self, token: dict[str, Any], maps: list[Map]
+    ) -> dict[str, MapUserData]:
         session = OAuth2Session(
             self.client_id,
             token=token,
         )
 
-        # chunks of 20
-        records: dict[str, int] = {}
-        chunked_map_uids = [map_uids[i : i + 20] for i in range(0, len(map_uids), 20)]
-        for chunk in chunked_map_uids:
+        dict_of_maps = {m.OnlineID: m for m in maps}
+        records: dict[str, MapUserData] = {}
+        chunked_maps = [maps[i : i + 20] for i in range(0, len(maps), 20)]
+        for chunk in chunked_maps:
             response = session.get(
                 f"{self.API_BASE_URL}api/user/map-records",
-                params={"mapId[]": chunk},
+                params={"mapId[]": map(lambda m: m.OnlineID, chunk)},
             )
             response.raise_for_status()
-            records |= {record["mapId"]: record["time"] for record in response.json()}
+            records |= {
+                record["mapId"]: MapUserData.from_record(
+                    record["time"], dict_of_maps[record["mapId"]].Medals
+                )
+                for record in response.json()
+            }
         return records
 
     def get_favorite_maps(self, token: dict[str, Any]) -> dict[str, Any]:
@@ -240,7 +293,7 @@ class ServerController:
             apiVersion="2022-03-21",
         )
         self.state: Optional[ServerState] = None
-        self._uid_to_id_cache: dict[str, tuple[int, str]] = {}
+        self._uid_to_id_cache: dict[str, tuple[int, str, dict[str, int]]] = {}
         self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
         self.update_event: Event = Event()
         self.sqlite_cache_path = sqlite_cache_path
@@ -249,10 +302,10 @@ class ServerController:
         self._db = DB(self.sqlite_cache_path)
         self._uid_to_id_cache = self._db.get_all_entries()
         while True:
-            try:
-                self.update_state()
-            except Exception as e:
-                print(f"Error during periodic update: {e}")
+            # try:
+            self.update_state()
+            # except Exception as e:
+            # print(f"Error during periodic update: {e}")
             self.update_event.wait(timeout=60)
             self.update_event.clear()  # Race condition, but I don't care
 
@@ -330,23 +383,37 @@ class ServerController:
     def get_current_map_index(self) -> int:
         return check_cast(self.remote.call("GetCurrentMapIndex"), int)
 
-    def get_tmx_ids(self, map_uid: str) -> tuple[int, str]:
+    def get_tmx_ids(self, map_uid: str) -> tuple[int, str, dict[str, int]]:
         if map_uid in self._uid_to_id_cache:
             return self._uid_to_id_cache[map_uid]
         response = get(
             f"https://trackmania.exchange/api/maps?uid={map_uid}",
-            params={"fields": "MapId,OnlineMapId"},
+            params={
+                "fields": "MapId,OnlineMapId,Medals.Author,Medals.Gold,Medals.Silver,Medals.Bronze"
+            },
         )
         if response.status_code != 200:
+            print(response.url)
             raise RuntimeError(f"Failed to retrieve TMX info for map UID {map_uid}.")
 
         id = response.json()["Results"][0]["MapId"]
         online_map_id = response.json()["Results"][0]["OnlineMapId"]
+        medals = response.json()["Results"][0]["Medals"]
 
-        self._uid_to_id_cache[map_uid] = (id, online_map_id)
-        self._db.db_add_entry(DBEntry(uid=map_uid, id=id, online_id=online_map_id))
+        self._uid_to_id_cache[map_uid] = (id, online_map_id, medals)
+        self._db.db_add_entry(
+            DBEntry(
+                uid=map_uid,
+                id=id,
+                online_id=online_map_id,
+                author_medal=medals.get("Author", 0),
+                gold_medal=medals.get("Gold", 0),
+                silver_medal=medals.get("Silver", 0),
+                bronze_medal=medals.get("Bronze", 0),
+            )
+        )
 
-        return id, online_map_id
+        return id, online_map_id, medals
 
     @validate_connection
     def get_map_list(self, map_chunks: int = 5) -> list[Map]:
@@ -364,9 +431,10 @@ class ServerController:
             maps += new_maps
             offset += map_chunks
         for map_data in maps:
-            tmx_id, online_id = self.get_tmx_ids(map_data["UId"])
+            tmx_id, online_id, medals = self.get_tmx_ids(map_data["UId"])
             map_data["ID"] = tmx_id
             map_data["OnlineID"] = online_id
+            map_data["Medals"] = medals
 
         return [Map(**map_data) for map_data in maps]
 
@@ -434,9 +502,7 @@ def create_app(
 
         records = {}
         if "token" in session:
-            records = nadeo_api.get_records(
-                session["token"], [map.OnlineID for map in controller.state.maps]
-            )
+            records = nadeo_api.get_records(session["token"], controller.state.maps)
 
         return render_template(
             "index.html",
