@@ -83,6 +83,61 @@ def check_cast[T](obj: Any, typ: type[T]) -> T:
     return cast(T, obj)
 
 
+@dataclass
+class DBEntry:
+    uid: str
+    id: int
+    online_id: str
+
+    @classmethod
+    def create_table_sql(cls, cursor) -> None:
+        # get entries and type hints
+        fields = cls.__annotations__
+
+        sql_type_mapping = {str: "TEXT", int: "INTEGER"}
+
+        rows = ", ".join(
+            f"{field} {sql_type_mapping[typ]}"
+            + (" PRIMARY KEY" if field == "id" else "")
+            for field, typ in fields.items()
+        )
+
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS map_uid_to_id ({rows})")
+
+    def insert_or_replace(self, cursor) -> None:
+        return cursor.execute(
+            "INSERT OR REPLACE INTO map_uid_to_id (uid, id, online_id) VALUES (?, ?, ?)",
+            (self.uid, self.id, self.online_id),
+        )
+
+    @classmethod
+    def select_all(cls, cursor) -> list["DBEntry"]:
+        cursor.execute("SELECT uid, id, online_id FROM map_uid_to_id")
+        rows = cursor.fetchall()
+        return [cls(uid=row[0], id=row[1], online_id=row[2]) for row in rows]
+
+
+class DB:
+    def __init__(self, db_path: str) -> None:
+        self.conn = sqlite3.connect(db_path)
+        self._initialize_db()
+
+    def _initialize_db(self) -> None:
+        cursor = self.conn.cursor()
+        DBEntry.create_table_sql(cursor)
+        self.conn.commit()
+
+    def db_add_entry(self, entry: DBEntry) -> None:
+        cursor = self.conn.cursor()
+        entry.insert_or_replace(cursor)
+        self.conn.commit()
+
+    def get_all_entries(self) -> dict[str, tuple[int, str]]:
+        cursor = self.conn.cursor()
+        entry = DBEntry.select_all(cursor)
+        return {e.uid: (e.id, e.online_id) for e in entry}
+
+
 class NadeoAPI:
     LOGIN_URL = "https://api.trackmania.com/oauth/authorize"
     TOKEN_URL = "https://api.trackmania.com/api/access_token"
@@ -191,9 +246,8 @@ class ServerController:
         self.sqlite_cache_path = sqlite_cache_path
 
     def _periodic_update(self) -> None:
-        self._sqlite_cache_conn = sqlite3.connect(self.sqlite_cache_path)
-        self._initialize_cache_db()
-        self._uid_to_id_cache = self._load_uid_to_id_cache()
+        self._db = DB(self.sqlite_cache_path)
+        self._uid_to_id_cache = self._db.get_all_entries()
         while True:
             try:
                 self.update_state()
@@ -201,25 +255,6 @@ class ServerController:
                 print(f"Error during periodic update: {e}")
             self.update_event.wait(timeout=60)
             self.update_event.clear()  # Race condition, but I don't care
-
-    def _load_uid_to_id_cache(self) -> dict[str, tuple[int, str]]:
-        cursor = self._sqlite_cache_conn.cursor()
-        cursor.execute("SELECT uid, id, online_id FROM map_uid_to_id")
-        rows = cursor.fetchall()
-        return {uid: (id, online_id) for uid, id, online_id in rows}
-
-    def _initialize_cache_db(self) -> None:
-        cursor = self._sqlite_cache_conn.cursor()
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS map_uid_to_id (
-                uid TEXT PRIMARY KEY,
-                id INTEGER NOT NULL,
-                online_id STRING NOT NULL
-            )
-            """
-        )
-        self._sqlite_cache_conn.commit()
 
     @validate_connection
     def get_server_name(self) -> str:
@@ -304,15 +339,13 @@ class ServerController:
         )
         if response.status_code != 200:
             raise RuntimeError(f"Failed to retrieve TMX info for map UID {map_uid}.")
+
         id = response.json()["Results"][0]["MapId"]
         online_map_id = response.json()["Results"][0]["OnlineMapId"]
+
         self._uid_to_id_cache[map_uid] = (id, online_map_id)
-        cursor = self._sqlite_cache_conn.cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO map_uid_to_id (uid, id, online_id) VALUES (?, ?, ?)",
-            (map_uid, id, online_map_id),
-        )
-        self._sqlite_cache_conn.commit()
+        self._db.db_add_entry(DBEntry(uid=map_uid, id=id, online_id=online_map_id))
+
         return id, online_map_id
 
     @validate_connection
