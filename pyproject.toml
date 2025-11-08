@@ -7,12 +7,13 @@ requires-python = ">=3.12"
 dependencies = [
     "flask>=3.1.2",
     "requests>=2.32.5",
+    "requests-oauthlib>=2.0.0",
 ]
 
 [project.scripts]
 tm_mapselect = "tm_mapselect.main:main"
 
-[tool.uv.build]
+[tool.uv_build]
 include = ["tm_mapselect/templates/index.html"]
 
 [tool.uv.build-backend]

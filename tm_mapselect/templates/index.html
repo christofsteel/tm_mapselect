@@ -24,6 +24,7 @@ body {
 }
 #maps li {
   display: block;
+  position: relative;
   background-color: #03ae03;
   height: 15%;
   width: 20%;
@@ -35,6 +36,13 @@ body {
   transition: transform .2s;
   flex: 1 0 auto;
   box-sizing: border-box;
+  color: white;
+  font-size: 24px;
+  font-family: sans-serif;
+  font-weight: 1000;
+  text-shadow: 2px 2px 4px #000000;
+  text-align: center;
+  align-content: center;
 }    
 
 #maps .current-map {
@@ -55,25 +63,22 @@ body {
 #maps .mapstext {
   transform: skew(5deg);
   display: block;
-  width: 100%;
-  height: 100%;
-
 }
 
-#maps a{
+#maps li:hover + #maps .usertime {
   display: block;
-  width: 100%;
-  height: 100%;
-  text-decoration: none;
-  color: white;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  font-size: 24px;
+}
+
+#maps .usertime {
+  position: absolute;
+  bottom: 15px;
+  right: 25px;
+  background-color: rgba(0, 0, 0, 0.6);
+  padding: 5px 10px;
+  border-radius: 10px;
+  font-size: 18px;
   font-family: sans-serif;
-  font-weight: 1000;
-  text-shadow: 2px 2px 4px #000000;
+  font-weight: 700;
 }
 
 h1 {
@@ -143,7 +148,7 @@ h2 {
   box-sizing: border-box;
 }
 
-.options input[type="submit"] {
+.options input[type="submit"], .button, .button_left, .button_right {
   background-color: #02261f;
   color: #43a56c;
   font-size: 20px;
@@ -151,12 +156,26 @@ h2 {
   font-weight: 600;
   border: none;
   padding: 10px 20px;
-    width: 100%;
-  text-transform: uppercase;
   border-radius: 15px 0px 15px 0px;
+  text-decoration: none;
+}
+
+.button_left {
+  border-radius: 15px 0px 0px 0px;
+}
+
+.button_right {
+  border-radius: 0px 0px 15px 0px;
+  background-color: #047f4f;
+  color: #9acdb7;
+}
+
+
+.options input[type="submit"] {
+    width: 100%;
   box-sizing: border-box;
 }
-.options input[type="submit"]:hover {
+.options input[type="submit"]:hover, .button:hover, .button_left:hover {
   background-color: rgba(0, 0, 0, 1);
   color: #6efaa0;
   border:4px solid #6efaa0;
@@ -192,10 +211,15 @@ h2 {
   </head>
   <body>
     <h1>Trackmania Map Selector - {{ state.server_name }}</h1>
+    {% if user_name %}
+      <a class="button_left" href="/logout">Logout</a><span class="button_right">Logged in as {{ user_name }}</span>
+    {% else %}
+      <a class="button" href="{{ authorization_url }}">Login with Trackmania</a>
+    {% endif %}
     <div id='maps'>
       <ul>
         {% for map in state.maps %}
-          <li
+          <li onclick='jumpToMap({{ loop.index - 1 }})'
           {% if (loop.index - 1) == state.current_map_index %}
             class="current-map"
           {% endif %}
@@ -203,10 +227,12 @@ h2 {
         >
           <div class="mapstext" id="{{ map.ID}}" 
            >
-            <a href="#" onclick='jumpToMap({{ loop.index - 1 }})'><span class="mapname">{{ map.Name | format_tm | safe }}</span>
+            <span class="mapname">{{ map.Name | format_tm | safe }}</span>
               <span class="mapauthor">by {{ map.Author }}</span>              
-            </a>            
           </div>
+          {% if map.OnlineID in records %}
+            <div class="usertime">{{ records[map.OnlineID] | format_time }}</div>
+          {% endif %}
           </li>
         {% endfor %}
       </ul>

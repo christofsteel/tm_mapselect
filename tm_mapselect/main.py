@@ -1,8 +1,9 @@
 from threading import Thread, Event
+from requests_oauthlib import OAuth2Session
 from typing import Any, Callable, Concatenate, Optional, cast
 from xmlrpc.client import Fault
 from dataclasses import dataclass
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, session, redirect
 from requests import get
 from argparse import ArgumentParser
 import os
@@ -16,6 +17,7 @@ from .gbxremote import DedicatedRemote
 @dataclass
 class Map:
     ID: int
+    OnlineID: str
     UId: str
     Name: str
     FileName: str
@@ -81,6 +83,90 @@ def check_cast[T](obj: Any, typ: type[T]) -> T:
     return cast(T, obj)
 
 
+class NadeoAPI:
+    LOGIN_URL = "https://api.trackmania.com/oauth/authorize"
+    TOKEN_URL = "https://api.trackmania.com/api/access_token"
+    API_BASE_URL = "https://api.trackmania.com/"
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        redirect_uri="http://localhost:8080/.auth/callback",
+    ) -> None:
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = redirect_uri
+        # self.session: OAuth2Session = OAuth2Session(
+        #     client_id, redirect_uri=redirect_uri
+        # )
+
+    def get_authorization_url(self) -> str:
+        session = OAuth2Session(
+            self.client_id, redirect_uri=self.redirect_uri, scope=["read_favorite"]
+        )
+
+        authorization_url, state = session.authorization_url(self.LOGIN_URL)
+        return authorization_url
+
+    def get_token(self, code: str) -> dict[str, Any]:
+        session = OAuth2Session(self.client_id, redirect_uri=self.redirect_uri)
+        token = session.fetch_token(
+            self.TOKEN_URL,
+            code=code,
+            client_secret=self.client_secret,
+        )
+        return token
+
+    def get_user(self, token: dict[str, Any]) -> dict[str, Any]:
+        session = OAuth2Session(
+            self.client_id,
+            token=token,
+        )
+        response = session.get(f"{self.API_BASE_URL}api/user")
+        response.raise_for_status()
+        return response.json()
+
+    def get_records(self, token: dict[str, Any], map_uids: list[str]) -> dict[str, int]:
+        session = OAuth2Session(
+            self.client_id,
+            token=token,
+        )
+
+        # chunks of 20
+        records: dict[str, int] = {}
+        chunked_map_uids = [map_uids[i : i + 20] for i in range(0, len(map_uids), 20)]
+        for chunk in chunked_map_uids:
+            response = session.get(
+                f"{self.API_BASE_URL}api/user/map-records",
+                params={"mapId[]": chunk},
+            )
+            response.raise_for_status()
+            records |= {record["mapId"]: record["time"] for record in response.json()}
+        return records
+
+    def get_favorite_maps(self, token: dict[str, Any]) -> dict[str, Any]:
+        session = OAuth2Session(
+            self.client_id,
+            token=token,
+        )
+        response = session.get(f"{self.API_BASE_URL}api/user/maps/favorite")
+        response.raise_for_status()
+        return response.json()
+
+    def get_account_ids(self, token: dict[str, Any]) -> dict[str, Any]:
+        session = OAuth2Session(
+            self.client_id,
+            token=token,
+        )
+        response = session.get(
+            f"{self.API_BASE_URL}api/display-names/account-ids",
+            params={"displayName[]": "christ.of.steel"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 class ServerController:
     def __init__(
         self,
@@ -99,7 +185,7 @@ class ServerController:
             apiVersion="2022-03-21",
         )
         self.state: Optional[ServerState] = None
-        self._uid_to_id_cache: dict[str, int] = {}
+        self._uid_to_id_cache: dict[str, tuple[int, str]] = {}
         self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
         self.update_event: Event = Event()
         self.sqlite_cache_path = sqlite_cache_path
@@ -107,7 +193,7 @@ class ServerController:
     def _periodic_update(self) -> None:
         self._sqlite_cache_conn = sqlite3.connect(self.sqlite_cache_path)
         self._initialize_cache_db()
-        self._uid_to_id_cache: dict[str, int] = self._load_uid_to_id_cache()
+        self._uid_to_id_cache = self._load_uid_to_id_cache()
         while True:
             try:
                 self.update_state()
@@ -116,11 +202,11 @@ class ServerController:
             self.update_event.wait(timeout=60)
             self.update_event.clear()  # Race condition, but I don't care
 
-    def _load_uid_to_id_cache(self) -> dict[str, int]:
+    def _load_uid_to_id_cache(self) -> dict[str, tuple[int, str]]:
         cursor = self._sqlite_cache_conn.cursor()
-        cursor.execute("SELECT uid, id FROM map_uid_to_id")
+        cursor.execute("SELECT uid, id, online_id FROM map_uid_to_id")
         rows = cursor.fetchall()
-        return {uid: id for uid, id in rows}
+        return {uid: (id, online_id) for uid, id, online_id in rows}
 
     def _initialize_cache_db(self) -> None:
         cursor = self._sqlite_cache_conn.cursor()
@@ -128,7 +214,8 @@ class ServerController:
             """
             CREATE TABLE IF NOT EXISTS map_uid_to_id (
                 uid TEXT PRIMARY KEY,
-                id INTEGER NOT NULL
+                id INTEGER NOT NULL,
+                online_id STRING NOT NULL
             )
             """
         )
@@ -208,23 +295,25 @@ class ServerController:
     def get_current_map_index(self) -> int:
         return check_cast(self.remote.call("GetCurrentMapIndex"), int)
 
-    def get_tmx_id(self, map_uid: str) -> int:
+    def get_tmx_ids(self, map_uid: str) -> tuple[int, str]:
         if map_uid in self._uid_to_id_cache:
             return self._uid_to_id_cache[map_uid]
         response = get(
-            f"https://trackmania.exchange/api/maps?uid={map_uid}&fields=MapId"
+            f"https://trackmania.exchange/api/maps?uid={map_uid}",
+            params={"fields": "MapId,OnlineMapId"},
         )
         if response.status_code != 200:
             raise RuntimeError(f"Failed to retrieve TMX info for map UID {map_uid}.")
         id = response.json()["Results"][0]["MapId"]
-        self._uid_to_id_cache[map_uid] = id
+        online_map_id = response.json()["Results"][0]["OnlineMapId"]
+        self._uid_to_id_cache[map_uid] = (id, online_map_id)
         cursor = self._sqlite_cache_conn.cursor()
         cursor.execute(
-            "INSERT OR REPLACE INTO map_uid_to_id (uid, id) VALUES (?, ?)",
-            (map_uid, id),
+            "INSERT OR REPLACE INTO map_uid_to_id (uid, id, online_id) VALUES (?, ?, ?)",
+            (map_uid, id, online_map_id),
         )
         self._sqlite_cache_conn.commit()
-        return id
+        return id, online_map_id
 
     @validate_connection
     def get_map_list(self, map_chunks: int = 5) -> list[Map]:
@@ -241,8 +330,11 @@ class ServerController:
                 break
             maps += new_maps
             offset += map_chunks
-        tmx_infos = [{"ID": self.get_tmx_id(map_data["UId"])} for map_data in maps]
-        maps = [map_data | tmx_info for map_data, tmx_info in zip(maps, tmx_infos)]
+        for map_data in maps:
+            tmx_id, online_id = self.get_tmx_ids(map_data["UId"])
+            map_data["ID"] = tmx_id
+            map_data["OnlineID"] = online_id
+
         return [Map(**map_data) for map_data in maps]
 
     @validate_connection
@@ -277,23 +369,48 @@ class ServerController:
         self.update_player_list()
 
 
-def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
+def create_app(
+    tm_server, tm_xml_port, tm_user, tm_password, client_id, client_secret, redirect_uri
+) -> Flask:
     app = Flask(__name__)
+    app.secret_key = os.urandom(24)
     controller = ServerController(tm_server, tm_xml_port, tm_user, tm_password)
     controller.connect()
+    nadeo_api = NadeoAPI(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+    )
 
     @app.template_filter()
     def format_tm(word: str) -> str:
         return word_to_html(word)
+
+    @app.template_filter()
+    def format_time(ms: int) -> str:
+        seconds = ms // 1000
+        minutes = seconds // 60
+        seconds = seconds % 60
+        milliseconds = ms % 1000
+        return f"{minutes:02}:{seconds:02}.{milliseconds:03}"
 
     @app.route("/")
     def index():
         if not controller.state:
             return "<h1>Error: Not connected to the server.</h1>"
 
+        records = {}
+        if "token" in session:
+            records = nadeo_api.get_records(
+                session["token"], [map.OnlineID for map in controller.state.maps]
+            )
+
         return render_template(
             "index.html",
             state=controller.state,
+            authorization_url=nadeo_api.get_authorization_url(),
+            user_name=session.get("displayName", None),
+            records=records,
         )
 
     @app.route("/jumpToMap/<int:map_index>")
@@ -335,6 +452,28 @@ def create_app(tm_server, tm_xml_port, tm_user, tm_password) -> Flask:
 
         return f"<h1>Mode Script Settings</h1><ul>{settings_list}</ul><a href='/'>Go back</a>"
 
+    @app.route("/.auth/callback")
+    def auth_callback():
+        code = request.args.get("code")
+        if not code:
+            return "Error: No code provided."
+        state = request.args.get("state")  # TODO: validate state
+
+        token = nadeo_api.get_token(code)
+        session["token"] = token
+
+        user_info = nadeo_api.get_user(token)
+
+        session["displayName"] = user_info.get("displayName", "Unknown User")
+
+        return redirect("/")
+
+    @app.route("/logout")
+    def logout():
+        session.pop("token", None)
+        session.pop("displayName", None)
+        return redirect("/")
+
     return app
 
 
@@ -345,6 +484,11 @@ def main():
     password = os.getenv("TM_PASSWORD", None)
     host = os.getenv("APP_HOST", "localhost")
     port = int(os.getenv("APP_PORT", "8080"))
+    client_id = os.getenv("NADEO_CLIENT_ID", None)
+    client_secret = os.getenv("NADEO_CLIENT_SECRET", None)
+    redirect_uri = os.getenv(
+        "NADEO_REDIRECT_URI", "http://localhost:8080/.auth/callback"
+    )
 
     arg_parser = ArgumentParser(description="Trackmania Dedicated Server Controller")
     arg_parser.add_argument(
@@ -388,10 +532,41 @@ def main():
     arg_parser.add_argument(
         "--port", "-P", type=int, default=port, help="Bind port for the web server"
     )
+    arg_parser.add_argument(
+        "--client-id",
+        "-c",
+        type=str,
+        required=True if not client_id else False,
+        default=client_id,
+        help="Nadeo API Client ID",
+    )
+    arg_parser.add_argument(
+        "--client-secret",
+        "-C",
+        type=str,
+        required=True if not client_secret else False,
+        default=client_secret,
+        help="Nadeo API Client Secret",
+    )
+    arg_parser.add_argument(
+        "--redirect-uri",
+        "-r",
+        type=str,
+        default=redirect_uri,
+        help="Nadeo API Redirect URI",
+    )
 
     args = arg_parser.parse_args()
 
-    app = create_app(args.server, args.xml_port, args.username, args.password)
+    app = create_app(
+        args.server,
+        args.xml_port,
+        args.username,
+        args.password,
+        args.client_id,
+        args.client_secret,
+        args.redirect_uri,
+    )
     app.run(host=args.host, port=args.port, debug=True)
 
 
