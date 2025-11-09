@@ -1,4 +1,5 @@
 from threading import Thread, Event
+from oauthlib.oauth2 import TokenExpiredError
 from requests_oauthlib import OAuth2Session
 from typing import Any, Callable, Concatenate, Literal, Optional, Self, cast
 from xmlrpc.client import Fault
@@ -393,7 +394,6 @@ class ServerController:
             },
         )
         if response.status_code != 200:
-            print(response.url)
             raise RuntimeError(f"Failed to retrieve TMX info for map UID {map_uid}.")
 
         id = response.json()["Results"][0]["MapId"]
@@ -502,7 +502,11 @@ def create_app(
 
         records = {}
         if "token" in session:
-            records = nadeo_api.get_records(session["token"], controller.state.maps)
+            try:
+                records = nadeo_api.get_records(session["token"], controller.state.maps)
+            except TokenExpiredError:
+                session.pop("token", None)
+                session.pop("displayName", None)
 
         return render_template(
             "index.html",
