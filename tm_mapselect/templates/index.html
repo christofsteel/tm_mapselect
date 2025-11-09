@@ -1,290 +1,361 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Trackmania Map Selector - {{ state.server_name }}</title>
-    <style>
 
-body {
-  background-image: linear-gradient(to bottom right, #1da153, #48a9ca);
-  background-attachment: fixed;
-  text-transform: uppercase;
-}
-#maps {
-  background-color: rgba(0, 0, 0, 0.3);
-  overflow-y: auto;
-}    
+<head>
+  <title>Trackmania Map Selector - {{ state.server_name }}</title>
+  <style>
+    body {
+      background-image: linear-gradient(to bottom right, #1da153, #48a9ca);
+      background-attachment: fixed;
+      text-transform: uppercase;
+    }
 
-#maps ul {
-  display: flex;
-  height: 70vh;
-  flex-wrap: wrap;
-  flex-direction: column;
-  gap: 0px;
-  transform: skew(-5deg);
-}
-#maps li {
-  display: block;
-  position: relative;
-  background-color: #03ae03;
-  height: 15%;
-  width: 20%;
-  /* border: 5px solid white; */
-  margin: 10px;
-  border-radius: 15px 0px 15px 0px;
-  background-size: cover;
-  background-position: center;
-  transition: transform .2s;
-  flex: 1 0 auto;
-  box-sizing: border-box;
-  color: white;
-  font-size: 24px;
-  font-family: sans-serif;
-  font-weight: 1000;
-  text-shadow: 2px 2px 4px #000000;
-  text-align: center;
-  align-content: center;
-}    
+    #maps {
+      background-color: rgba(0, 0, 0, 0.3);
+      overflow-y: auto;
+    }
 
-#maps .current-map {
-  border: 5px solid #6efaa0;
-  /* box-shadow: 0 0 30px 15px rgba(255, 255, 255, 0.7); */
-}
+    #maplist {
+      display: flex;
+      height: 70vh;
+      flex-wrap: wrap;
+      flex-direction: column;
+      gap: 0px;
+      transform: skew(-5deg);
+      z-index: 0;
+    }
 
-#maps .current-map:hover {
-  /* box-shadow: 0 0 30px 15px rgba(110, 250, 160, 0.7); */
-}
+    #maps li.mapwindow {
+      display: flex;
+      position: relative;
+      height: 15%;
+      width: 20%;
+      margin: 10px;
+      flex: 1 0 auto;
+      color: white;
+      font-size: 24px;
+      font-family: sans-serif;
+      font-weight: 1000;
+      text-shadow: 2px 2px 4px #000000;
+      text-align: center;
+      align-content: center;
+    }
 
-#maps li:hover {
-  cursor: pointer;
-  transform: scale(1.1);
-  border: 5px solid white;
-  z-index: 100;
-}
+    .maptile {
+      display: flex;
+      position: relative;
+      background-size: cover;
+      background-position: center;
+      transition: transform .2s;
+      box-sizing: border-box;
+      flex: auto;
+      z-index: 1;
+      border-radius: 15px 0px 15px 0px;
+    }
 
-.tilted {
-  transform: skew(-5deg);
-  padding-bottom: 10px;
-  padding-left: 2px;
-}
+    #maps .current-map {
+      border: 5px solid #6efaa0;
+      /* box-shadow: 0 0 30px 15px rgba(255, 255, 255, 0.7); */
+    }
 
-.tilted a, .tilted span{
-  transform: skew(5deg);
-}
+    #maps .current-map:hover {
+      /* box-shadow: 0 0 30px 15px rgba(110, 250, 160, 0.7); */
+    }
 
-#maps .mapstext {
-  transform: skew(5deg);
-  display: block;
-}
+    #maps .maptile:hover {
+      cursor: pointer;
+      transform: scale(1.1);
+      border: 5px solid white;
+      z-index: 3;
+    }
 
-#maps li:hover + #maps .usertime {
-  display: block;
-}
+    .tilted {
+      transform: skew(-5deg);
+      padding-bottom: 10px;
+      padding-left: 2px;
+    }
 
-#maps .usertime {
-  position: absolute;
-  bottom: 5px;
-  right: 10px;
-  background-color: rgba(0, 0, 0, 0.6);
-  padding: 5px 10px;
-  border-radius: 10px;
-  font-size: 18px;
-  font-family: sans-serif;
-  font-weight: 700;
-}
+    .tilted a,
+    .tilted span {
+      transform: skew(5deg);
+    }
 
-h1 {
-  color: white;
-  font-size: 48px;
-  font-family: sans-serif;
-  font-weight: 1000;
-  text-shadow: 2px 2px 4px #000000;
-  text-align: center;
-}
-h2 {
-  color: white;
-  font-size: 32px;
-  font-family: sans-serif;
-  font-weight: 600;
-  text-align: center;
-}
-
-.options{
-  transform: skew(-5deg);
-  max-width: 100em;
-  margin: 20px auto;
-}
-
-.options label{
-  display: inline-block;
-  background-color: rgba(0, 5, 20, 0.6);
-  color: #a0a7a8;
-  padding: 10px 20px;
-  width: 60%;
-  font-size: 20px;
-  font-family: sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
-  border-radius: 15px 0px 0px 0px;
-  box-sizing: border-box;
-}
-
-.options .tm_stat {
-  display: inline-block;
-}
-
-.options input, .options .tm_stat{
-  margin: 5px 0px 0px 0px;
-}
-.options label:hover {
-  background-color: rgba(0, 5, 20, 1);
-  color: #6efaa0;
-}
-
-.options input:hover, .options input:focus, .options .tm_stat:hover, .options .connected_elements label:hover + .tm_stat {
-  background-color: #009b5f;
-  color: #ffffff;
-  cursor: text;
-}
-
-.options input, .options .tm_stat {
-  background-color: #047f4f;
-  color: #9acdb7;
-  font-size: 20px;
-  font-family: sans-serif;
-  font-weight: 600;
-  padding: 10px;
-  width: 40%;
-  border: none;
-  border-radius: 0px 0px 15px 0px;
-  box-sizing: border-box;
-}
-
-.options input[type="submit"], .button, .button_left, .button_right {
-  background-color: #02261f;
-  color: #43a56c;
-  font-size: 20px;
-  font-family: sans-serif;
-  font-weight: 600;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 15px 0px 15px 0px;
-  text-decoration: none;
-}
-
-.button_left {
-  border-radius: 15px 0px 0px 0px;
-}
-
-.button_right {
-  border-radius: 0px 0px 15px 0px;
-  background-color: #047f4f;
-  color: #9acdb7;
-}
+    #maps .mapstext {
+      transform: skew(5deg);
+      display: block;
+      flex: auto;
+      padding-top: 10px;
+    }
 
 
-.options input[type="submit"] {
-    width: 100%;
-  box-sizing: border-box;
-}
-.options input[type="submit"]:hover, .button:hover, .button_left:hover {
-  background-color: rgba(0, 0, 0, 1);
-  color: #6efaa0;
-  border:4px solid #6efaa0;
-  padding: 6px 16px;
-  box-sizing: border-box;
-}
+    #maps .usertime {
+      position: absolute;
+      bottom: 5px;
+      right: 10px;
+      background-color: rgba(0, 0, 0, 0.6);
+      padding: 5px 10px;
+      border-radius: 10px;
+      font-size: 18px;
+      font-family: sans-serif;
+      font-weight: 700;
+    }
 
-.medal {
-  text-shadow: 2px 2px 4px #000000;
-}
-.medal-Author {
-  color: #00FF00;
-}
-.medal-Gold {
-  color: #FFD700;
-}
-.medal-Silver {
-  color: #C0C0C0;
-}
-.medal-Bronze {
-  color: #cd7f32;
-}
-.medal-None {
-  display: none;
-}
-    </style>
+    h1 {
+      color: white;
+      font-size: 48px;
+      font-family: sans-serif;
+      font-weight: 1000;
+      text-shadow: 2px 2px 4px #000000;
+      text-align: center;
+    }
+
+    h2 {
+      color: white;
+      font-size: 32px;
+      font-family: sans-serif;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .options {
+      transform: skew(-5deg);
+      max-width: 100em;
+      margin: 20px auto;
+    }
+
+    .options label {
+      display: inline-block;
+      background-color: rgba(0, 5, 20, 0.6);
+      color: #a0a7a8;
+      padding: 10px 20px;
+      width: 60%;
+      font-size: 20px;
+      font-family: sans-serif;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 15px 0px 0px 0px;
+      box-sizing: border-box;
+    }
+
+    .options .tm_stat {
+      display: inline-block;
+    }
+
+    .options input,
+    .options .tm_stat {
+      margin: 5px 0px 0px 0px;
+    }
+
+    .options label:hover {
+      background-color: rgba(0, 5, 20, 1);
+      color: #6efaa0;
+    }
+
+    .options input:hover,
+    .options input:focus,
+    .options .tm_stat:hover,
+    .options .connected_elements label:hover+.tm_stat {
+      background-color: #009b5f;
+      color: #ffffff;
+      cursor: text;
+    }
+
+    .options input,
+    .options .tm_stat {
+      background-color: #047f4f;
+      color: #9acdb7;
+      font-size: 20px;
+      font-family: sans-serif;
+      font-weight: 600;
+      padding: 10px;
+      width: 40%;
+      border: none;
+      border-radius: 0px 0px 15px 0px;
+      box-sizing: border-box;
+    }
+
+    .options input[type="submit"],
+    .button,
+    .button_left,
+    .button_right {
+      background-color: #02261f;
+      color: #43a56c;
+      font-size: 20px;
+      font-family: sans-serif;
+      font-weight: 600;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 15px 0px 15px 0px;
+      text-decoration: none;
+    }
+
+    .button_left {
+      border-radius: 15px 0px 0px 0px;
+    }
+
+    .button_right {
+      border-radius: 0px 0px 15px 0px;
+      background-color: #047f4f;
+      color: #9acdb7;
+    }
+
+
+    .options input[type="submit"] {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .options input[type="submit"]:hover,
+    .button:hover,
+    .button_left:hover {
+      background-color: rgba(0, 0, 0, 1);
+      color: #6efaa0;
+      border: 4px solid #6efaa0;
+      padding: 6px 16px;
+      box-sizing: border-box;
+    }
+
+    .medal {
+      text-shadow: 2px 2px 4px #000000;
+    }
+
+    .medal-Author {
+      color: #00FF00;
+    }
+
+    .medal-Gold {
+      color: #FFD700;
+    }
+
+    .medal-Silver {
+      color: #C0C0C0;
+    }
+
+    .medal-Bronze {
+      color: #cd7f32;
+    }
+
+    .medal-None {
+      display: none;
+    }
+
+    .medal-tooltip {
+      visibility: hidden;
+      width: max-content;
+      height: 100%;
+      position: absolute;
+      z-index: 2;
+      top: 0%;
+      left: 70%;
+      font-size: 16px;
+      transition: left 0.5s ease-in-out, transform 0.2s;
+      background-color: #02261f;
+      opacity: 0.9;
+      border-radius: 15px 0px 15px 0px;
+      display: flex;
+      align-items: center;
+    }
+
+    .medal-tooltip ul {
+      list-style-type: none;
+      padding: 0px 15px 0px 30px;
+    }
+
+    .maptile:hover+.medal-tooltip {
+      visibility: visible;
+      left: 100%;
+      transform: scale(1.1);
+    }
+  </style>
 
   <script>
-  function jumpToMap(index) {
-    fetch('/jumpToMap/' + index, { method: 'GET' })
-    .then(response => {
-      if (response.ok) {
-        console.log('Jumped to map index: ' + index);
-      } else {
-        console.error('Failed to jump to map index: ' + index);
-      }
-    })
-    .catch(error => {
-      console.error('Error:', error);
-    });
-  }
+    function jumpToMap(index) {
+      fetch('/jumpToMap/' + index, {method: 'GET'})
+        .then(response => {
+          if (response.ok) {
+            console.log('Jumped to map index: ' + index);
+          } else {
+            console.error('Failed to jump to map index: ' + index);
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+        });
+    }
 
-  function applySettings() {
-    const formElement = document.getElementById('settingsForm');
-    const data = new FormData(formElement);
-    fetch('/settings', {
-      method: 'POST',
-      body: data 
-    })
-  }
-    </script>
-  </head>
-  <body>
-    <h1>Trackmania Map Selector - {{ state.server_name }}</h1>
-    <div class="tilted">{% if user_name %}
-      <a class="button_left" href="/logout">Logout</a><span class="button_right">Logged in as {{ user_name }}</span>
+    function applySettings() {
+      const formElement = document.getElementById('settingsForm');
+      const data = new FormData(formElement);
+      fetch('/settings', {
+        method: 'POST',
+        body: data
+      })
+    }
+  </script>
+</head>
+
+<body>
+  <h1>Trackmania Map Selector - {{ state.server_name }}</h1>
+  <div class="tilted">{% if user_name %}
+    <a class="button_left" href="/logout">Logout</a><span class="button_right">Logged in as {{ user_name }}</span>
     {% else %}
-      <a class="button" href="{{ authorization_url }}">Login with Trackmania</a>
+    <a class="button" href="{{ authorization_url }}">Login with Trackmania</a>
     {% endif %}
-    </div>
-    <div id='maps'>
-      <ul>
-        {% for map in state.maps %}
-          <li onclick='jumpToMap({{ loop.index - 1 }})'
-          {% if (loop.index - 1) == state.current_map_index %}
-            class="current-map"
-          {% endif %}
- style="background-image: url('https://trackmania.exchange/mapthumb/{{ map.ID }}');"
-        >
-          <div class="mapstext" id="{{ map.ID}}" 
-           >
+  </div>
+  <div id='maps'>
+    <ul id='maplist'>
+
+      {% for map in state.maps %}
+
+      <li class="mapwindow" onclick='jumpToMap({{ loop.index - 1 }})' {% if (loop.index - 1)==state.current_map_index %}
+        class="current-map" {% endif %}>
+        <div class="maptile" style="background-image: url('https://trackmania.exchange/mapthumb/{{ map.ID }}');">
+          <div class="mapstext" id="{{ map.ID}}">
             <span class="mapname">{{ map.Name | format_tm | safe }}</span>
-              <span class="mapauthor">by {{ map.Author }}</span>              
+            <span class="mapauthor">by {{ map.Author }}</span>
           </div>
+
           {% if map.OnlineID in records %}
-          <div class="usertime"><span class="medal medal-{{ records[map.OnlineID].medal }}">&#9679;</span> {{ records[map.OnlineID].record | format_time }}</div>          
+          <div class="usertime"><span class="medal medal-{{ records[map.OnlineID].medal }}">&#9679;</span> {{
+            records[map.OnlineID].record | format_time }}</div>
           {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
-    </div>
-    <h2>Options and Stats</h2>
-    <div class='options'>
-      <form id='settingsForm' method="post" action="#" onsubmit="applySettings();return false">
-        <div class="connected_elements">
-          <label for='current_players'>Current Players</label><span class="tm_stat">{{state.players|length}}</span>
         </div>
-        <div class="connected_elements">
-          <label>Current Map</label><span class="tm_stat">{{ state.current_map.Name | format_tm | safe }}</span>
+
+        <div class="medal-tooltip">
+          <ul>
+            <li><span class="medal medal-Author">&#9679;</span> {{ map.Medals["Author"] | format_time }}</li>
+            <li><span class="medal medal-Gold">&#9679;</span> {{ map.Medals["Gold"] | format_time }}</li>
+            <li><span class="medal medal-Silver">&#9679;</span> {{ map.Medals["Silver"] | format_time }}</li>
+            <li><span class="medal medal-Bronze">&#9679;</span> {{ map.Medals["Bronze"] | format_time }}</li>
+          </ul>
         </div>
-        <div class="connected_elements">
-          <label>Number of Maps loaded</label><span class="tm_stat">{{ state.maps|length }}</span>
+
+      </li>
+
+      {% endfor %}
+
+    </ul>
+  </div>
+  <h2>Options and Stats</h2>
+  <div class='options'>
+    <form id='settingsForm' method="post" action="#" onsubmit="applySettings();return false">
+      <div class="connected_elements">
+        <label for='current_players'>Current Players</label><span class="tm_stat">{{state.players|length}}</span>
+      </div>
+      <div class="connected_elements">
+        <label>Current Map</label><span class="tm_stat">{{ state.current_map.Name | format_tm | safe }}</span>
+      </div>
+      <div class="connected_elements">
+        <label>Number of Maps loaded</label><span class="tm_stat">{{ state.maps|length }}</span>
         <div>
-          <label for='time_limit'>Time Limit</label><input type='number' id='time_limit' name='time_limit' value="{{ state.modescript_settings.time_limit }}" required>
-          <label for='max_players'>Maximum Players</label><input type='number' id='max_players' name='max_players' value="{{ state.max_players }}" required>
+          <label for='time_limit'>Time Limit</label><input type='number' id='time_limit' name='time_limit'
+            value="{{ state.modescript_settings.time_limit }}" required>
+          <label for='max_players'>Maximum Players</label><input type='number' id='max_players' name='max_players'
+            value="{{ state.max_players }}" required>
         </div>
         <input type='submit' value='Apply' onclick='applySettings()'>
-      </form>
-    </div>
-  </body>
+    </form>
+  </div>
+</body>
+
 </html>
