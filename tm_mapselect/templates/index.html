@@ -93,7 +93,7 @@
       bottom: 5px;
       right: 10px;
       background-color: rgba(0, 0, 0, 0.6);
-      padding: 5px 10px;
+      padding: 0px 10px 5px 10px;
       border-radius: 10px;
       font-size: 18px;
       font-family: sans-serif;
@@ -216,23 +216,25 @@
     }
 
     .medal {
-      text-shadow: 2px 2px 4px #000000;
+      position: relative;
+      height: 22px;
+      top: 5px;
     }
 
-    .medal-Author {
-      color: #00FF00;
+    .medal-Author:before {
+      content: "🏆";
     }
 
-    .medal-Gold {
-      color: #FFD700;
+    .medal-Gold:before {
+      content: "🥇";
     }
 
-    .medal-Silver {
-      color: #C0C0C0;
+    .medal-Silver:before {
+      content: "🥈";
     }
 
-    .medal-Bronze {
-      color: #cd7f32;
+    .medal-Bronze:before {
+      content: "🥉";
     }
 
     .medal-None {
@@ -244,9 +246,8 @@
       width: max-content;
       height: 100%;
       position: absolute;
-      z-index: 2;
       top: 0%;
-      left: 70%;
+      left: 50%;
       font-size: 16px;
       transition: left 0.5s ease-in-out, transform 0.2s;
       background-color: #02261f;
@@ -254,17 +255,19 @@
       border-radius: 15px 0px 15px 0px;
       display: flex;
       align-items: center;
+      z-index: 0;
     }
 
     .medal-tooltip ul {
       list-style-type: none;
-      padding: 0px 15px 0px 30px;
+      padding: 0px 15px 0px 40px;
     }
 
     .maptile:hover+.medal-tooltip {
       visibility: visible;
       left: 100%;
       transform: scale(1.1);
+      z-index: 2;
     }
   </style>
 
@@ -316,17 +319,26 @@
           </div>
 
           {% if map.OnlineID in records %}
-          <div class="usertime"><span class="medal medal-{{ records[map.OnlineID].medal }}">&#9679;</span> {{
-            records[map.OnlineID].record | format_time }}</div>
+          <div class="usertime">
+            {% if records[map.OnlineID].medal %}
+            <img src="{{ url_for('static', filename='medal-'  + records[map.OnlineID].medal + '.png')}}"
+              class="medal" />
+            {% endif %}
+            {{- records[map.OnlineID].record | format_time }}
+          </div>
           {% endif %}
         </div>
 
         <div class="medal-tooltip">
           <ul>
-            <li><span class="medal medal-Author">&#9679;</span> {{ map.Medals["Author"] | format_time }}</li>
-            <li><span class="medal medal-Gold">&#9679;</span> {{ map.Medals["Gold"] | format_time }}</li>
-            <li><span class="medal medal-Silver">&#9679;</span> {{ map.Medals["Silver"] | format_time }}</li>
-            <li><span class="medal medal-Bronze">&#9679;</span> {{ map.Medals["Bronze"] | format_time }}</li>
+            <li><img src="{{ url_for('static', filename='medal-Author.png')}}" class="medal"> {{ map.Medals["Author"] |
+              format_time }}</li>
+            <li><img src="{{ url_for('static', filename='medal-Gold.png')}}" class="medal"> {{ map.Medals["Gold"] |
+              format_time }}</li>
+            <li><img src="{{ url_for('static', filename='medal-Silver.png')}}" class="medal"> {{ map.Medals["Silver"] |
+              format_time }}</li>
+            <li><img src="{{ url_for('static', filename='medal-Bronze.png')}}" class="medal"> {{ map.Medals["Bronze"] |
+              format_time }}</li>
           </ul>
         </div>
 
