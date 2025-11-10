@@ -84,10 +84,47 @@
     }
 
     .top_bar input[type="text"] {
-      border-radius: 15px 0px 15px 0px;
+      border-radius: 15px 0px 0px 0px;
+      padding: 10px 0px 10px 20px;
+      width: fit-content;
+      background-color: #047f4f;
+      color: #9acdb7;
+      font-size: 20px;
+      font-family: sans-serif;
+      font-weight: 600;
+      border: none;
+    }
+
+    .top_bar input[type="checkbox"] {
+      display: none;
+      visibility: hidden;
+    }
+
+    .top_bar input[type="checkbox"]:checked+.checkbox_label_right {
+      background-color: #006644;
+      color: #ffffff;
+    }
+
+    .top_bar .checkbox_label_right:hover {
+      background-color: #009b5f;
+      color: #ffffff;
+      cursor: pointer;
+    }
+
+    .top_bar .checkbox_label_right {
+      background-color: #047f4f;
+      color: #b5d3c6;
+      font-size: 20px;
+      font-family: sans-serif;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 0px 0px 15px 0px;
+      cursor: pointer;
+    }
+
+    .top_bar .right_area {
       position: absolute;
       right: 0px;
-      padding: 10px 20px;
       top: 0px;
       width: fit-content;
     }
@@ -135,7 +172,8 @@
       margin: 20px auto;
     }
 
-    .options label {
+    .options label,
+    .label_left {
       display: inline-block;
       background-color: rgba(0, 5, 20, 0.6);
       color: #a0a7a8;
@@ -154,7 +192,8 @@
     }
 
     .options input,
-    .options .tm_stat {
+    .options .tm_stat,
+    .input_right {
       margin: 5px 0px 0px 0px;
     }
 
@@ -166,15 +205,16 @@
     .options input:hover,
     .options input:focus,
     .options .tm_stat:hover,
-    .options .connected_elements label:hover+.tm_stat {
+    .options .connected_elements label:hover+.tm_stat,
+    .input_right:hover {
       background-color: #009b5f;
       color: #ffffff;
       cursor: text;
     }
 
-    .top_bar input,
     .options input,
-    .options .tm_stat {
+    .options .tm_stat,
+    .input_right {
       background-color: #047f4f;
       color: #9acdb7;
       font-size: 20px;
@@ -185,6 +225,11 @@
       border: none;
       border-radius: 0px 0px 15px 0px;
       box-sizing: border-box;
+    }
+
+    input[type="checkbox"].input_right {
+      padding: 10px 20px;
+      border-radius: 0px 15px 0px 0px;
     }
 
     .options input[type="submit"],
@@ -308,13 +353,16 @@
       })
     }
 
-    function filter_maplist(search_term) {
+    function filter_maplist() {
+      const search_term = document.getElementById('map_search').value;
+      const hide_completed = document.getElementById('hide_completed').checked;
       const maplist = document.getElementById('maplist');
       const maps = maplist.getElementsByClassName('mapwindow');
       for (let i = 0; i < maps.length; i++) {
         const mapNameElement = maps[i].querySelector('.clean_mapstext');
         const mapName = mapNameElement.textContent;
-        if (mapName.toLowerCase().indexOf(search_term.toLowerCase()) > -1) {
+        if (mapName.toLowerCase().indexOf(search_term.toLowerCase()) > -1 &&
+          (!hide_completed || !maps[i].querySelector('.usertime'))) {
           maps[i].style.display = '';
         } else {
           maps[i].style.display = 'none';
@@ -332,8 +380,12 @@
     {% else %}
     <a class="button" href="{{ authorization_url }}">Login with Trackmania</a>
     {% endif %}
-    <input type="text" id="map_search" name="map_search" placeholder="Filter Maps..."
-      onkeyup="filter_maplist(this.value)">
+    <span class="right_area">
+      <input type="text" id="map_search" name="map_search" placeholder="Filter Maps..."
+        onkeyup="filter_maplist()"><input type="checkbox" id="hide_completed" name="hide_completed"
+        onchange="filter_maplist()" /><label for="hide_completed" class="checkbox_label_right">Hide Completed
+        Maps</label>
+    </span>
   </div>
   <div id='maps'>
     <ul id='maplist'>
