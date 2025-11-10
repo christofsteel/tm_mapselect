@@ -126,3 +126,8 @@ def parse_word(word: str) -> list[Fragment]:
 def word_to_html(word: str) -> str:
     fragments = parse_word(word)
     return "".join(fragment.to_html() for fragment in fragments)
+
+
+def word_to_clean_text(word: str) -> str:
+    fragments = parse_word(word)
+    return "".join(fragment.text for fragment in fragments)

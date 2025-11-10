@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 import os
 import sqlite3
 
-from tm_mapselect.tmcolors import word_to_html
+from tm_mapselect.tmcolors import word_to_clean_text, word_to_html
 
 from .gbxremote import DedicatedRemote
 
@@ -486,6 +486,10 @@ def create_app(
     @app.template_filter()
     def format_tm(word: str) -> str:
         return word_to_html(word)
+
+    @app.template_filter()
+    def format_tm_clean(word: str) -> str:
+        return word_to_clean_text(word)
 
     @app.template_filter()
     def format_time(ms: int) -> str:

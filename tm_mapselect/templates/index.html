@@ -69,15 +69,27 @@
       z-index: 3;
     }
 
-    .tilted {
+    .top_bar {
       transform: skew(-5deg);
-      padding-bottom: 10px;
-      padding-left: 2px;
+      width: 100%;
+      position: relative;
+      height: fit-content;
+      padding: 10px 0px;
     }
 
-    .tilted a,
-    .tilted span {
+
+    .top_bar a,
+    .top_bar span {
       transform: skew(5deg);
+    }
+
+    .top_bar input[type="text"] {
+      border-radius: 15px 0px 15px 0px;
+      position: absolute;
+      right: 0px;
+      padding: 10px 20px;
+      top: 0px;
+      width: fit-content;
     }
 
     #maps .mapstext {
@@ -160,6 +172,7 @@
       cursor: text;
     }
 
+    .top_bar input,
     .options input,
     .options .tm_stat {
       background-color: #047f4f;
@@ -294,16 +307,33 @@
         body: data
       })
     }
+
+    function filter_maplist(search_term) {
+      const maplist = document.getElementById('maplist');
+      const maps = maplist.getElementsByClassName('mapwindow');
+      for (let i = 0; i < maps.length; i++) {
+        const mapNameElement = maps[i].querySelector('.clean_mapstext');
+        const mapName = mapNameElement.textContent;
+        if (mapName.toLowerCase().indexOf(search_term.toLowerCase()) > -1) {
+          maps[i].style.display = '';
+        } else {
+          maps[i].style.display = 'none';
+        }
+      }
+    }
+
   </script>
 </head>
 
 <body>
   <h1>Trackmania Map Selector - {{ state.server_name }}</h1>
-  <div class="tilted">{% if user_name %}
+  <div class="top_bar">{%- if user_name %}
     <a class="button_left" href="/logout">Logout</a><span class="button_right">Logged in as {{ user_name }}</span>
     {% else %}
     <a class="button" href="{{ authorization_url }}">Login with Trackmania</a>
     {% endif %}
+    <input type="text" id="map_search" name="map_search" placeholder="Filter Maps..."
+      onkeyup="filter_maplist(this.value)">
   </div>
   <div id='maps'>
     <ul id='maplist'>
@@ -317,6 +347,8 @@
             <span class="mapname">{{ map.Name | format_tm | safe }}</span>
             <span class="mapauthor">by {{ map.Author }}</span>
           </div>
+          <div class="clean_mapstext" style="display: none;">{{ map.Name | format_tm_clean }} {{ map.Author |
+            format_tm_clean }}</div>
 
           {% if map.OnlineID in records %}
           <div class="usertime">
