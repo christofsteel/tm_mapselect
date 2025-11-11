@@ -115,6 +115,7 @@ class DBEntry:
     uid: str
     id: int
     online_id: str
+    author_name: str
     author_medal: int
     gold_medal: int
     silver_medal: int
@@ -167,22 +168,10 @@ class DB:
         entry.insert_or_replace(cursor)
         self.conn.commit()
 
-    def get_all_entries(self) -> dict[str, tuple[int, str, dict[str, int]]]:
+    def get_all_entries(self) -> dict[str, DBEntry]:
         cursor = self.conn.cursor()
-        entry = DBEntry.select_all(cursor)
-        return {
-            e.uid: (
-                e.id,
-                e.online_id,
-                {
-                    "Author": e.author_medal,
-                    "Gold": e.gold_medal,
-                    "Silver": e.silver_medal,
-                    "Bronze": e.bronze_medal,
-                },
-            )
-            for e in entry
-        }
+        entries = DBEntry.select_all(cursor)
+        return {e.uid: e for e in entries}
 
 
 class NadeoAPI:
@@ -294,7 +283,7 @@ class ServerController:
             apiVersion="2022-03-21",
         )
         self.state: Optional[ServerState] = None
-        self._uid_to_id_cache: dict[str, tuple[int, str, dict[str, int]]] = {}
+        self._uid_to_id_cache: dict[str, DBEntry] = {}
         self.update_thread: Thread = Thread(target=self._periodic_update, daemon=True)
         self.update_event: Event = Event()
         self.sqlite_cache_path = sqlite_cache_path
@@ -384,13 +373,13 @@ class ServerController:
     def get_current_map_index(self) -> int:
         return check_cast(self.remote.call("GetCurrentMapIndex"), int)
 
-    def get_tmx_ids(self, map_uid: str) -> tuple[int, str, dict[str, int]]:
+    def get_tmx_ids(self, map_uid: str) -> DBEntry:
         if map_uid in self._uid_to_id_cache:
             return self._uid_to_id_cache[map_uid]
         response = get(
             f"https://trackmania.exchange/api/maps?uid={map_uid}",
             params={
-                "fields": "MapId,OnlineMapId,Medals.Author,Medals.Gold,Medals.Silver,Medals.Bronze"
+                "fields": "MapId,OnlineMapId,Medals.Author,Medals.Gold,Medals.Silver,Medals.Bronze,Authors[]"
             },
         )
         if response.status_code != 200:
@@ -399,21 +388,23 @@ class ServerController:
         id = response.json()["Results"][0]["MapId"]
         online_map_id = response.json()["Results"][0]["OnlineMapId"]
         medals = response.json()["Results"][0]["Medals"]
+        authors = response.json()["Results"][0].get("Authors", [])
+        author_name = authors[0]["User"]["Name"] if authors else "Unknown"
 
-        self._uid_to_id_cache[map_uid] = (id, online_map_id, medals)
-        self._db.db_add_entry(
-            DBEntry(
-                uid=map_uid,
-                id=id,
-                online_id=online_map_id,
-                author_medal=medals.get("Author", 0),
-                gold_medal=medals.get("Gold", 0),
-                silver_medal=medals.get("Silver", 0),
-                bronze_medal=medals.get("Bronze", 0),
-            )
+        entry = DBEntry(
+            uid=map_uid,
+            id=id,
+            online_id=online_map_id,
+            author_name=author_name,
+            author_medal=medals.get("Author", 0),
+            gold_medal=medals.get("Gold", 0),
+            silver_medal=medals.get("Silver", 0),
+            bronze_medal=medals.get("Bronze", 0),
         )
+        self._uid_to_id_cache[map_uid] = entry
+        self._db.db_add_entry(entry)
 
-        return id, online_map_id, medals
+        return entry
 
     @validate_connection
     def get_map_list(self, map_chunks: int = 5) -> list[Map]:
@@ -431,10 +422,16 @@ class ServerController:
             maps += new_maps
             offset += map_chunks
         for map_data in maps:
-            tmx_id, online_id, medals = self.get_tmx_ids(map_data["UId"])
-            map_data["ID"] = tmx_id
-            map_data["OnlineID"] = online_id
-            map_data["Medals"] = medals
+            entry = self.get_tmx_ids(map_data["UId"])
+            map_data["ID"] = entry.id
+            map_data["OnlineID"] = entry.online_id
+            map_data["Medals"] = {
+                "Author": entry.author_medal,
+                "Gold": entry.gold_medal,
+                "Silver": entry.silver_medal,
+                "Bronze": entry.bronze_medal,
+            }
+            map_data["Author"] = entry.author_name
 
         return [Map(**map_data) for map_data in maps]
 
