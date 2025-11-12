@@ -1,10 +1,13 @@
 from threading import Thread, Event
 from oauthlib.oauth2 import TokenExpiredError
+from oauthlib.oauth2.rfc6749.grant_types import refresh_token
 from requests_oauthlib import OAuth2Session
 from typing import Any, Callable, Concatenate, Literal, Optional, Self, cast
 from xmlrpc.client import Fault
 from dataclasses import dataclass
 from flask import Flask, request, render_template, session, redirect
+from flask_session import Session
+from cachelib.file import FileSystemCache
 from requests import get
 from argparse import ArgumentParser
 import os
@@ -191,6 +194,18 @@ class NadeoAPI:
         # self.session: OAuth2Session = OAuth2Session(
         #     client_id, redirect_uri=redirect_uri
         # )
+
+    def refresh_token(self, token: dict[str, Any]) -> dict[str, Any]:
+        session = OAuth2Session(
+            self.client_id,
+            token=token,
+        )
+        new_token = session.refresh_token(
+            token_url=self.TOKEN_URL,
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+        )
+        return new_token
 
     def get_authorization_url(self) -> str:
         session = OAuth2Session(
@@ -472,6 +487,15 @@ def create_app(
 ) -> Flask:
     app = Flask(__name__)
     app.secret_key = os.urandom(24)
+
+    app.config["SESSION_TYPE"] = "cachelib"
+    app.config["SESSION_SERIALIZATION_FORMAT"] = "json"
+    app.config["SESSION_CACHELIB"] = FileSystemCache(
+        threshold=500, cache_dir="sessions"
+    )
+    app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 60 * 24 * 31
+    Session(app)
+
     controller = ServerController(tm_server, tm_xml_port, tm_user, tm_password)
     controller.connect()
     nadeo_api = NadeoAPI(
@@ -506,8 +530,11 @@ def create_app(
             try:
                 records = nadeo_api.get_records(session["token"], controller.state.maps)
             except TokenExpiredError:
-                session.pop("token", None)
-                session.pop("displayName", None)
+                print("Refreshing expired token...")
+                new_token = nadeo_api.refresh_token(session["token"])
+                session["token"] = new_token
+                session.permanent = True
+                records = nadeo_api.get_records(session["token"], controller.state.maps)
 
         return render_template(
             "index.html",
@@ -565,10 +592,12 @@ def create_app(
 
         token = nadeo_api.get_token(code)
         session["token"] = token
+        print(token)
 
         user_info = nadeo_api.get_user(token)
 
         session["displayName"] = user_info.get("displayName", "Unknown User")
+        session.permanent = True
 
         return redirect("/")
 
