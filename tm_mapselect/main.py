@@ -590,6 +590,7 @@ def main():
     port = int(os.getenv("APP_PORT", "8080"))
     client_id = os.getenv("NADEO_CLIENT_ID", None)
     client_secret = os.getenv("NADEO_CLIENT_SECRET", None)
+    debug = os.getenv("APP_DEBUG", "1") == "1"
     redirect_uri = os.getenv(
         "NADEO_REDIRECT_URI", "http://localhost:8080/.auth/callback"
     )
@@ -671,7 +672,7 @@ def main():
         args.client_secret,
         args.redirect_uri,
     )
-    app.run(host=args.host, port=args.port, debug=True)
+    app.run(host=args.host, port=args.port, debug=debug)
 
 
 if __name__ == "__main__":
